@@ -12,11 +12,20 @@ const QUESTION_TYPES = [
   { key: 'multi_choice', label: '多选' },
   { key: 'true_false', label: '判断' },
   { key: 'fill_blank', label: '填空' },
+  { key: 'short_answer', label: '简答' },
+  { key: 'essay', label: '论述' },
 ];
 const DIFFICULTIES = [
   { key: 'basic', label: '基础' },
   { key: 'advanced', label: '进阶' },
   { key: 'challenge', label: '拔高' },
+];
+
+const DIFF_PRESETS = [
+  { key: 'default', label: '均匀', ratios: null },
+  { key: 'basic_focus', label: '基础巩固', ratios: { basic: 0.50, advanced: 0.35, challenge: 0.15 } },
+  { key: 'balanced', label: '综合训练', ratios: { basic: 0.30, advanced: 0.40, challenge: 0.30 } },
+  { key: 'advanced_focus', label: '冲刺拔高', ratios: { basic: 0.15, advanced: 0.35, challenge: 0.50 } },
 ];
 
 const UPLOAD_MODES = [
@@ -45,11 +54,14 @@ export default function Home() {
   const [ocrPolling, setOcrPolling] = useState({});
   const [ocrEditId, setOcrEditId] = useState(null);
   const [ocrEditText, setOcrEditText] = useState('');
+  const [lightbox, setLightbox] = useState(null);  // BUG-037: 图片点击放大
 
   const [examConfig, setExamConfig] = useState({
     questionTypes: ['single_choice', 'multi_choice', 'true_false', 'fill_blank'],
     difficulties: ['basic', 'advanced', 'challenge'],
     totalQuestions: 20,
+    difficultyRatios: null,
+    diffPreset: 'default',
   });
 
   const [deleteConfirm, setDeleteConfirm] = useState(null);
@@ -91,6 +103,12 @@ export default function Home() {
       await new Promise((r) => setTimeout(r, 2000));
       try {
         const res = await api.getNote(noteId);
+        // BUG-036: 检查 ocr_status 判断 OCR 是否失败
+        if (res.data?.ocr_status === 'failed') {
+          setOcrPolling((p) => ({ ...p, [noteId]: 'failed' }));
+          mutateNotes();
+          return;
+        }
         if (res.data?.content && res.data.content.trim()) {
           setOcrPolling((p) => ({ ...p, [noteId]: 'done' }));
           mutateNotes();
@@ -304,7 +322,8 @@ export default function Home() {
                 <div>
                   {uploadMode === 'image' && previewUrl ? (
                     <img src={previewUrl} alt="预览"
-                      style={{ maxWidth: '100%', maxHeight: 160, borderRadius: 8, marginBottom: 8, objectFit: 'contain' }} />
+                      onClick={(e) => { e.stopPropagation(); setLightbox(previewUrl); }}
+                      style={{ maxWidth: '100%', maxHeight: 160, borderRadius: 8, marginBottom: 8, objectFit: 'contain', cursor: 'zoom-in' }} />
                   ) : null}
                   <div style={{ fontSize: '1rem', fontWeight: 500, color: 'var(--ink)' }}>
                     {selectedFile.name}
@@ -342,6 +361,19 @@ export default function Home() {
                 }}
               style={{ display: 'none' }}
             />
+            {Object.values(ocrPolling).some(s => s === 'polling') && (
+              <div style={{
+                marginTop: 14, padding: '12px 16px', borderRadius: 'var(--radius-sm)',
+                background: '#eff6ff', border: '1px solid #bfdbfe',
+                display: 'flex', alignItems: 'center', gap: 10,
+              }}>
+                <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block', fontSize: '1.2rem' }}>{'⏳'}</span>
+                <div>
+                  <div style={{ fontSize: '.85rem', fontWeight: 500, color: '#1e40af' }}>OCR 识别中……</div>
+                  <div style={{ fontSize: '.75rem', color: '#3b82f6', marginTop: 2 }}>AI 正在识别图片文字，请稍候</div>
+                </div>
+              </div>
+            )}
             <button
               className="btn btn-primary"
               disabled={uploading || !selectedFile}
@@ -404,6 +436,23 @@ export default function Home() {
                 </button>
               ))}
             </div>
+            <div style={{ marginBottom: 10 }}>
+              <span style={{ fontSize: '.78rem', color: 'var(--slate-light)', marginRight: 8 }}>占比：</span>
+              {DIFF_PRESETS.map((p) => (
+                <button
+                  key={p.key}
+                  onClick={() => setExamConfig((c) => ({ ...c, diffPreset: p.key, difficultyRatios: p.ratios }))}
+                  style={{
+                    marginRight: 6, marginBottom: 4, padding: '4px 12px', borderRadius: 100,
+                    border: 'none', cursor: 'pointer', fontSize: '.72rem', fontWeight: 500,
+                    background: examConfig.diffPreset === p.key ? 'var(--ink)' : 'var(--paper)',
+                    color: examConfig.diffPreset === p.key ? '#fff' : 'var(--slate)',
+                  }}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
             <div>
               <span style={{ fontSize: '.78rem', color: 'var(--slate-light)', marginRight: 8 }}>题数：</span>
               <input
@@ -458,6 +507,7 @@ export default function Home() {
                     {!n.content && (n.note_type === 'image' || n.note_type === 'pdf') ? (
                       <span style={{ marginLeft: 8, fontSize: '.72rem', color: 'var(--amber)' }}>
                         {ocrPolling[n.id] === 'polling' ? '⏳ OCR 识别中...' :
+                         ocrPolling[n.id] === 'failed' ? '❌ OCR 识别失败' :
                          ocrPolling[n.id] === 'timeout' ? '⚠ OCR 超时' :
                          ocrPolling[n.id] === 'done' && n.content ? '✅ 识别完成' : ''}
                       </span>
@@ -765,6 +815,22 @@ export default function Home() {
           onRefresh={() => handleViewExam(examView.id)}
           showToast={showToast}
         />
+      )}
+
+      {/* BUG-037: 图片放大灯箱 */}
+      {lightbox && (
+        <div
+          onClick={() => setLightbox(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 300,
+            background: 'rgba(0,0,0,.85)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'zoom-out', padding: 40,
+          }}
+        >
+          <img src={lightbox} alt="原图"
+            style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: 8, boxShadow: '0 20px 60px rgba(0,0,0,.5)' }} />
+        </div>
       )}
 
       {/* 删除确认 */}

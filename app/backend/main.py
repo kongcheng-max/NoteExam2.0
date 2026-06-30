@@ -6,6 +6,8 @@ from database import init_db
 from routers.notes import router as notes_router
 from routers.exams import router as exams_router
 from routers.files import router as files_router
+from routers.wrong_answers import router as wrong_answers_router
+from routers.auth import router as auth_router
 
 
 @asynccontextmanager
@@ -35,6 +37,8 @@ app.add_middleware(
 app.include_router(notes_router)
 app.include_router(files_router)
 app.include_router(exams_router)
+app.include_router(wrong_answers_router)
+app.include_router(auth_router)
 
 
 @app.get("/api/health")

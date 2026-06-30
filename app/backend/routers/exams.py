@@ -2,13 +2,14 @@
 import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from database import get_db
-from models import Note, KnowledgePoint, Exam, Question
+from models import Note, KnowledgePoint, Exam, Question, User
 from schemas import (
     ExamGenerateRequest, ExamResponse, ExamListItem, QuestionResponse,
     KnowledgePointResponse, APIResponse, QuestionUpdate, QuestionReorder,
 )
+from routers.auth import get_current_user
 from services.deepseek import deepseek_service
 
 router = APIRouter(prefix="/api/exams", tags=["试卷管理"])
@@ -54,13 +55,15 @@ def validate_question(q: dict) -> bool:
 
 
 @router.post("/generate", response_model=APIResponse)
-async def generate_exam(req: ExamGenerateRequest, db: AsyncSession = Depends(get_db)):
+async def generate_exam(req: ExamGenerateRequest, db: AsyncSession = Depends(get_db), user: User | None = Depends(get_current_user)):
     """生成试卷 —— 核心流程：验证笔记 → 知识提取 → 试题生成 → 存库"""
     # 1. 验证笔记存在
     result = await db.execute(select(Note).where(Note.id == req.note_id))
     note = result.scalar_one_or_none()
     if not note:
         raise HTTPException(status_code=404, detail="笔记不存在")
+    if user and note.user_id != "default" and note.user_id != user.id:
+        raise HTTPException(status_code=403, detail="无权访问此笔记")
 
     # 2. 知识提取（Step 1）
     try:
@@ -93,6 +96,7 @@ async def generate_exam(req: ExamGenerateRequest, db: AsyncSession = Depends(get
             question_types=req.question_types,
             difficulties=req.difficulties,
             total_questions=req.total_questions,
+            difficulty_ratios=req.difficulty_ratios,
         )
     except ValueError as e:
         raise HTTPException(status_code=502, detail=f"试题生成格式异常: {str(e)}")
@@ -150,21 +154,47 @@ async def generate_exam(req: ExamGenerateRequest, db: AsyncSession = Depends(get
 
 
 @router.get("", response_model=APIResponse)
-async def list_exams(db: AsyncSession = Depends(get_db)):
+async def list_exams(db: AsyncSession = Depends(get_db), user: User | None = Depends(get_current_user)):
     """获取试卷列表"""
-    result = await db.execute(select(Exam).order_by(Exam.created_at.desc()))
+    # BUG-044: 按 user_id 过滤（通过关联 Note 表）
+    note_filter = Note.user_id.in_([user.id, "default"]) if user else Note.user_id == "default"
+    result = await db.execute(
+        select(Exam).join(Note, Exam.note_id == Note.id).where(note_filter).order_by(Exam.created_at.desc())
+    )
     exams = result.scalars().all()
+
+    # BUG-040: 查询每份试卷的试题数
+    question_counts = {}
+    if exams:
+        exam_ids = [e.id for e in exams]
+        q_result = await db.execute(
+            select(Question.exam_id, func.count(Question.id))
+            .where(Question.exam_id.in_(exam_ids))
+            .group_by(Question.exam_id)
+        )
+        question_counts = dict(q_result.all())
+
+    data = []
+    for e in exams:
+        item = ExamListItem.model_validate(e).model_dump(mode="json")
+        item["question_count"] = question_counts.get(e.id, 0)
+        data.append(item)
 
     return APIResponse(
         success=True,
-        data=[ExamListItem.model_validate(e).model_dump(mode="json") for e in exams],
+        data=data,
     )
 
 
 @router.get("/{exam_id}", response_model=APIResponse)
-async def get_exam(exam_id: str, db: AsyncSession = Depends(get_db)):
+async def get_exam(exam_id: str, db: AsyncSession = Depends(get_db), user: User | None = Depends(get_current_user)):
     """获取单份试卷详情（含试题）"""
-    result = await db.execute(select(Exam).where(Exam.id == exam_id))
+    result = await db.execute(
+        select(Exam).join(Note, Exam.note_id == Note.id).where(
+            Exam.id == exam_id,
+            Note.user_id.in_([user.id, "default"]) if user else Note.user_id == "default"
+        )
+    )
     exam = result.scalar_one_or_none()
     if not exam:
         raise HTTPException(status_code=404, detail="试卷不存在")
@@ -202,9 +232,18 @@ async def get_exam(exam_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.put("/{exam_id}/questions/reorder", response_model=APIResponse)
 async def reorder_questions(
-    exam_id: str, req: QuestionReorder, db: AsyncSession = Depends(get_db)
+    exam_id: str, req: QuestionReorder, db: AsyncSession = Depends(get_db), user: User | None = Depends(get_current_user)
 ):
     """调整题目顺序"""
+    # Verify exam access
+    exam_chk = await db.execute(
+        select(Exam).join(Note, Exam.note_id == Note.id).where(
+            Exam.id == exam_id,
+            Note.user_id.in_([user.id, "default"]) if user else Note.user_id == "default"
+        )
+    )
+    if not exam_chk.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="试卷不存在")
     for i, qid in enumerate(req.question_ids):
         result = await db.execute(
             select(Question).where(Question.id == qid, Question.exam_id == exam_id)
@@ -220,9 +259,18 @@ async def reorder_questions(
 
 @router.put("/{exam_id}/questions/{question_id}", response_model=APIResponse)
 async def update_question(
-    exam_id: str, question_id: str, req: QuestionUpdate, db: AsyncSession = Depends(get_db)
+    exam_id: str, question_id: str, req: QuestionUpdate, db: AsyncSession = Depends(get_db), user: User | None = Depends(get_current_user)
 ):
     """编辑单道试题"""
+    # Verify exam access
+    exam_chk2 = await db.execute(
+        select(Exam).join(Note, Exam.note_id == Note.id).where(
+            Exam.id == exam_id,
+            Note.user_id.in_([user.id, "default"]) if user else Note.user_id == "default"
+        )
+    )
+    if not exam_chk2.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="试卷不存在")
     result = await db.execute(
         select(Question).where(Question.id == question_id, Question.exam_id == exam_id)
     )
@@ -263,9 +311,18 @@ async def update_question(
 
 @router.delete("/{exam_id}/questions/{question_id}", response_model=APIResponse)
 async def delete_question(
-    exam_id: str, question_id: str, db: AsyncSession = Depends(get_db)
+    exam_id: str, question_id: str, db: AsyncSession = Depends(get_db), user: User | None = Depends(get_current_user)
 ):
     """删除单道试题"""
+    # Verify exam access
+    exam_chk3 = await db.execute(
+        select(Exam).join(Note, Exam.note_id == Note.id).where(
+            Exam.id == exam_id,
+            Note.user_id.in_([user.id, "default"]) if user else Note.user_id == "default"
+        )
+    )
+    if not exam_chk3.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="试卷不存在")
     result = await db.execute(
         select(Question).where(Question.id == question_id, Question.exam_id == exam_id)
     )
@@ -287,11 +344,17 @@ async def export_exam(
     format: str = "html",
     with_answers: bool = True,
     db: AsyncSession = Depends(get_db),
+    user: User | None = Depends(get_current_user),
 ):
     """导出试卷为 HTML 或 PDF"""
     from fastapi.responses import HTMLResponse, Response
 
-    result = await db.execute(select(Exam).where(Exam.id == exam_id))
+    result = await db.execute(
+        select(Exam).join(Note, Exam.note_id == Note.id).where(
+            Exam.id == exam_id,
+            Note.user_id.in_([user.id, "default"]) if user else Note.user_id == "default"
+        )
+    )
     exam = result.scalar_one_or_none()
     if not exam:
         raise HTTPException(status_code=404, detail="试卷不存在")
@@ -330,12 +393,18 @@ async def export_exam(
 
 
 @router.delete("/{exam_id}", response_model=APIResponse)
-async def delete_exam(exam_id: str, db: AsyncSession = Depends(get_db)):
+async def delete_exam(exam_id: str, db: AsyncSession = Depends(get_db), user: User | None = Depends(get_current_user)):
     """删除试卷"""
-    result = await db.execute(select(Exam).where(Exam.id == exam_id))
+    result = await db.execute(
+        select(Exam).join(Note, Exam.note_id == Note.id).where(Exam.id == exam_id)
+    )
     exam = result.scalar_one_or_none()
     if not exam:
         raise HTTPException(status_code=404, detail="试卷不存在")
+    if exam.note and user and exam.note.user_id != "default" and exam.note.user_id != user.id:
+        raise HTTPException(status_code=403, detail="无权删除此试卷")
+    if exam.note and exam.note.user_id == "default":
+        raise HTTPException(status_code=403, detail="无权删除公共试卷")
 
     await db.delete(exam)
     await db.commit()

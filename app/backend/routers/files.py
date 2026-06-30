@@ -30,6 +30,10 @@ async def _process_file_ocr(note_id: str, file_path: str, note_type: str):
         if not note:
             return
 
+        # BUG-036: 标记 OCR 开始处理
+        note.ocr_status = "processing"
+        await db.commit()
+
         try:
             loop = asyncio.get_running_loop()
             if note_type == "image":
@@ -41,11 +45,15 @@ async def _process_file_ocr(note_id: str, file_path: str, note_type: str):
 
             if text and text.strip():
                 note.content = text.strip()
+                note.ocr_status = "done"
+                await db.commit()
+            else:
+                note.ocr_status = "failed"
                 await db.commit()
         except Exception:
-            # BUG-027: OCR 失败时不写入错误文本到 content，避免后续生成废题
-            # content 保持空字符串，前端轮询后可通过 content 是否为空判断 OCR 是否成功
-            pass
+            # BUG-036: OCR 失败时更新状态为 failed，前端据此展示友好提示
+            note.ocr_status = "failed"
+            await db.commit()
 
 
 @router.post("/upload", response_model=APIResponse)

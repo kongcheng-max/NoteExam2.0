@@ -1,18 +1,41 @@
-﻿"""笔记相关 API 路由"""
+"""笔记相关 API 路由"""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from database import get_db
-from models import Note, KnowledgePoint
+from models import Note, KnowledgePoint, User
+from routers.auth import get_current_user
 from schemas import NoteCreate, NoteUpdate, NoteResponse, KnowledgePointResponse, APIResponse, KnowledgePointCreate, KnowledgePointUpdate
 
 router = APIRouter(prefix="/api/notes", tags=["笔记管理"])
 
 
+def _user_filter(user: User | None):
+    """Build user_id filter: logged-in users see own + default; guests see only default"""
+    if user:
+        return Note.user_id.in_([user.id, "default"])
+    return Note.user_id == "default"
+
+
+async def _check_note_access(note_id: str, user: User | None, db: AsyncSession, require_owner: bool = False):
+    """Verify note exists and user has access. Returns note or raises HTTPException."""
+    result = await db.execute(select(Note).where(Note.id == note_id))
+    note = result.scalar_one_or_none()
+    if not note:
+        raise HTTPException(status_code=404, detail="笔记不存在")
+    if user and note.user_id != "default" and note.user_id != user.id:
+        raise HTTPException(status_code=403, detail="无权访问此笔记")
+    if require_owner and note.user_id == "default":
+        raise HTTPException(status_code=403, detail="无权修改公共笔记")
+    if require_owner and user and note.user_id != user.id:
+        raise HTTPException(status_code=403, detail="无权修改此笔记")
+    return note
+
+
 @router.post("", response_model=APIResponse)
-async def create_note(req: NoteCreate, db: AsyncSession = Depends(get_db)):
+async def create_note(req: NoteCreate, db: AsyncSession = Depends(get_db), user: User | None = Depends(get_current_user)):
     """上传笔记"""
-    note = Note(content=req.content, note_type=req.note_type)
+    note = Note(content=req.content, note_type=req.note_type, user_id=user.id if user else "default")
     db.add(note)
     await db.commit()
     await db.refresh(note)
@@ -21,12 +44,9 @@ async def create_note(req: NoteCreate, db: AsyncSession = Depends(get_db)):
 
 
 @router.put("/{note_id}", response_model=APIResponse)
-async def update_note(note_id: str, req: NoteUpdate, db: AsyncSession = Depends(get_db)):
+async def update_note(note_id: str, req: NoteUpdate, db: AsyncSession = Depends(get_db), user: User | None = Depends(get_current_user)):
     """Update note content for OCR review"""
-    result = await db.execute(select(Note).where(Note.id == note_id))
-    note = result.scalar_one_or_none()
-    if not note:
-        raise HTTPException(status_code=404, detail="笔记不存在")
+    note = await _check_note_access(note_id, user, db, require_owner=True)
 
     if req.content is not None:
         note.content = req.content
@@ -42,9 +62,9 @@ async def update_note(note_id: str, req: NoteUpdate, db: AsyncSession = Depends(
 
 
 @router.get("", response_model=APIResponse)
-async def list_notes(db: AsyncSession = Depends(get_db)):
+async def list_notes(db: AsyncSession = Depends(get_db), user: User | None = Depends(get_current_user)):
     """获取笔记列表"""
-    result = await db.execute(select(Note).order_by(Note.created_at.desc()))
+    result = await db.execute(select(Note).where(_user_filter(user)).order_by(Note.created_at.desc()))
     notes = result.scalars().all()
 
     return APIResponse(
@@ -57,12 +77,9 @@ async def list_notes(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{note_id}", response_model=APIResponse)
-async def get_note(note_id: str, db: AsyncSession = Depends(get_db)):
+async def get_note(note_id: str, db: AsyncSession = Depends(get_db), user: User | None = Depends(get_current_user)):
     """获取单篇笔记详情"""
-    result = await db.execute(select(Note).where(Note.id == note_id))
-    note = result.scalar_one_or_none()
-    if not note:
-        raise HTTPException(status_code=404, detail="笔记不存在")
+    note = await _check_note_access(note_id, user, db)
 
     return APIResponse(
         success=True,
@@ -71,11 +88,9 @@ async def get_note(note_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{note_id}/knowledge-points", response_model=APIResponse)
-async def get_note_knowledge_points(note_id: str, db: AsyncSession = Depends(get_db)):
+async def get_note_knowledge_points(note_id: str, db: AsyncSession = Depends(get_db), user: User | None = Depends(get_current_user)):
     """获取笔记关联的知识点"""
-    note_result = await db.execute(select(Note).where(Note.id == note_id))
-    if not note_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="笔记不存在")
+    await _check_note_access(note_id, user, db)
 
     result = await db.execute(
         select(KnowledgePoint).where(KnowledgePoint.note_id == note_id)
@@ -95,11 +110,9 @@ async def get_note_knowledge_points(note_id: str, db: AsyncSession = Depends(get
 # ============ V1.1: 知识点手动调整 ============
 
 @router.post("/{note_id}/knowledge-points", response_model=APIResponse)
-async def add_knowledge_point(note_id: str, req: KnowledgePointCreate, db: AsyncSession = Depends(get_db)):
+async def add_knowledge_point(note_id: str, req: KnowledgePointCreate, db: AsyncSession = Depends(get_db), user: User | None = Depends(get_current_user)):
     """手动添加知识点"""
-    note_result = await db.execute(select(Note).where(Note.id == note_id))
-    if not note_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="笔记不存在")
+    note = await _check_note_access(note_id, user, db, require_owner=True)
 
     kp = KnowledgePoint(
         note_id=note_id,
@@ -120,9 +133,11 @@ async def add_knowledge_point(note_id: str, req: KnowledgePointCreate, db: Async
 
 @router.put("/{note_id}/knowledge-points/{kp_id}", response_model=APIResponse)
 async def update_knowledge_point(
-    note_id: str, kp_id: str, req: KnowledgePointUpdate, db: AsyncSession = Depends(get_db)
+    note_id: str, kp_id: str, req: KnowledgePointUpdate, db: AsyncSession = Depends(get_db), user: User | None = Depends(get_current_user)
 ):
     """手动修改知识点"""
+    await _check_note_access(note_id, user, db, require_owner=True)
+
     result = await db.execute(
         select(KnowledgePoint).where(
             KnowledgePoint.id == kp_id,
@@ -151,8 +166,10 @@ async def update_knowledge_point(
 
 
 @router.delete("/{note_id}/knowledge-points/{kp_id}", response_model=APIResponse)
-async def delete_knowledge_point(note_id: str, kp_id: str, db: AsyncSession = Depends(get_db)):
+async def delete_knowledge_point(note_id: str, kp_id: str, db: AsyncSession = Depends(get_db), user: User | None = Depends(get_current_user)):
     """手动删除知识点"""
+    await _check_note_access(note_id, user, db, require_owner=True)
+
     result = await db.execute(
         select(KnowledgePoint).where(
             KnowledgePoint.id == kp_id,
@@ -170,12 +187,9 @@ async def delete_knowledge_point(note_id: str, kp_id: str, db: AsyncSession = De
 
 
 @router.delete("/{note_id}", response_model=APIResponse)
-async def delete_note(note_id: str, db: AsyncSession = Depends(get_db)):
+async def delete_note(note_id: str, db: AsyncSession = Depends(get_db), user: User | None = Depends(get_current_user)):
     """删除笔记（级联删除关联的知识点和试卷）"""
-    result = await db.execute(select(Note).where(Note.id == note_id))
-    note = result.scalar_one_or_none()
-    if not note:
-        raise HTTPException(status_code=404, detail="笔记不存在")
+    note = await _check_note_access(note_id, user, db, require_owner=True)
 
     await db.delete(note)
     await db.commit()

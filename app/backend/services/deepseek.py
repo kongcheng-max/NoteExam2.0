@@ -95,12 +95,28 @@ class DeepSeekService:
         question_types: list[str],
         difficulties: list[str],
         total_questions: int,
+        difficulty_ratios: dict = None,
     ) -> list[dict]:
         """试题生成 —— Step 2：根据知识点生成试卷"""
         kp_text = json.dumps(knowledge_points, ensure_ascii=False)
+        # V1.2: 计算各难度题目数量
+        if difficulty_ratios:
+            diff_counts = {}
+            for d in difficulties:
+                ratio = difficulty_ratios.get(d, 0)
+                diff_counts[d] = max(1, round(total_questions * ratio))
+            # 调整使总数正确
+            total_computed = sum(diff_counts.values())
+            if total_computed != total_questions:
+                keys = list(diff_counts.keys())
+                diff_counts[keys[0]] += total_questions - total_computed
+            diff_counts_str = "、".join(f"{d}:{c}题" for d, c in diff_counts.items())
+        else:
+            diff_counts_str = "均匀分布"
         prompt = QUESTION_GENERATE_PROMPT.format(
             question_types="、".join(question_types),
             difficulties="、".join(difficulties),
+            difficulty_counts=diff_counts_str,
             total_questions=total_questions,
             knowledge_points=kp_text,
         )

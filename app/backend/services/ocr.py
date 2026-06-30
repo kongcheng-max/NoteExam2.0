@@ -18,7 +18,7 @@ class OCRService:
             raise RuntimeError("Baidu OCR not configured")
         with open(image_path, "rb") as f:
             image_data = f.read()
-        result = self.client.basicAccurate(image_data)
+        result = self.client.handwriting(image_data)
         if "error_code" in result:
             msg = result.get("error_msg", "unknown")
             raise RuntimeError("OCR failed: " + str(msg))

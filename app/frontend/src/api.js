@@ -1,8 +1,20 @@
 const BASE = '/api';
 
+let authToken = localStorage.getItem('noteexam_token') || '';
+
+export function setToken(token) {
+  authToken = token;
+  if (token) localStorage.setItem('noteexam_token', token);
+  else localStorage.removeItem('noteexam_token');
+}
+
+export function getToken() { return authToken; }
+
 async function request(path, options = {}) {
+  const headers = { 'Content-Type': 'application/json', ...options.headers };
+  if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
   const res = await fetch(BASE + path, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+    headers,
     ...options,
   });
   if (!res.ok) {
@@ -31,7 +43,9 @@ export const api = {
     const form = new FormData();
     form.append('file', file);
     form.append('note_type', noteType);
-    return fetch(BASE + '/files/upload', { method: 'POST', body: form })
+    const headers = {};
+    if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
+    return fetch(BASE + '/files/upload', { method: 'POST', body: form, headers })
       .then(async (res) => {
         if (!res.ok) {
           let detail = '上传失败';
@@ -59,6 +73,7 @@ export const api = {
         question_types: opts.questionTypes || ['single_choice', 'multi_choice', 'true_false', 'fill_blank'],
         difficulties: opts.difficulties || ['basic', 'advanced', 'challenge'],
         total_questions: opts.totalQuestions || 20,
+        difficulty_ratios: opts.difficultyRatios || null,
       }),
     }),
   getExams: () => request('/exams'),
@@ -76,4 +91,25 @@ export const api = {
   // V1.1: 试卷导出
   getExportUrl: (examId, format = 'html', withAnswers = true) =>
     `${BASE}/exams/${examId}/export?format=${format}&with_answers=${withAnswers}`,
+
+  // V1.2: 错题回顾
+  markWrong: (questionId, userAnswer = '', note = '') =>
+    request(`/wrong-answers/questions/${questionId}`, { method: 'POST', body: JSON.stringify({ user_answer: userAnswer, note }) }),
+  unmarkWrong: (questionId) =>
+    request(`/wrong-answers/questions/${questionId}`, { method: 'DELETE' }),
+  getWrongAnswers: () => request('/wrong-answers'),
+  reviewWrong: (wrongId) =>
+    request(`/wrong-answers/${wrongId}/review`, { method: 'POST' }),
+  deleteWrong: (wrongId) =>
+    request(`/wrong-answers/${wrongId}`, { method: 'DELETE' }),
+
+  // V1.2: 用户认证
+  register: (email, password) =>
+    request('/auth/register', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  login: (email, password) =>
+    request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  getMe: () => request('/auth/me'),
+  logout: () => request('/auth/logout', { method: 'POST' }),
+  changePassword: (old_password, new_password) =>
+    request('/auth/password', { method: 'PUT', body: JSON.stringify({ old_password, new_password }) }),
 };

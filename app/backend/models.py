@@ -64,3 +64,27 @@ class Question(Base):
     order_num = Column(Integer, default=0)
 
     exam = relationship("Exam", back_populates="questions")
+
+class WrongAnswer(Base):
+    """V1.2: 错题记录"""
+    __tablename__ = "wrong_answers"
+
+    id = Column(String(20), primary_key=True, default=gen_id)
+    question_id = Column(String(20), ForeignKey("questions.id", ondelete="CASCADE"), nullable=False)
+    exam_id = Column(String(20), ForeignKey("exams.id", ondelete="CASCADE"), nullable=False)
+    user_answer = Column(Text, default="")  # 用户错误作答
+    note = Column(Text, default="")  # 用户备注
+    review_count = Column(Integer, default=0)  # 复习次数
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_reviewed_at = Column(DateTime, nullable=True)
+
+    question = relationship("Question")
+    exam = relationship("Exam")
+class User(Base):
+    """V1.2: 用户账号"""
+    __tablename__ = "users"
+
+    id = Column(String(20), primary_key=True, default=gen_id)
+    email = Column(String(200), unique=True, nullable=False)
+    password_hash = Column(String(200), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
