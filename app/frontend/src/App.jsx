@@ -5,6 +5,7 @@ import Nav from './components/Nav';
 import Home from './pages/Home';
 import WrongAnswers from './pages/WrongAnswers';
 import Settings from './pages/Settings';
+import OfflineBanner from './components/OfflineBanner';
 import Toast from './components/Toast';
 import { api, setToken, getToken } from './api';
 
@@ -117,6 +118,7 @@ export default function App() {
           </Routes>
           {toast.show && <Toast message={toast.message} type={toast.type} />}
           {showLogin && <LoginModal onClose={() => setShowLogin(false)} onSuccess={(u) => setUser(u)} />}
+          <OfflineBanner />
         </BrowserRouter>
       </AuthContext.Provider>
     </ToastContext.Provider>

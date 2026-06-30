@@ -92,6 +92,12 @@ export const api = {
   getExportUrl: (examId, format = 'html', withAnswers = true) =>
     `${BASE}/exams/${examId}/export?format=${format}&with_answers=${withAnswers}`,
 
+  // V1.4: 答题提交
+  submitExam: (examId, answers) =>
+    request('/exams/' + examId + '/submit', { method: 'POST', body: JSON.stringify({ answers }) }),
+  getExamResult: (examId) =>
+    request('/exams/' + examId + '/result'),
+
   // V1.2: 错题回顾
   markWrong: (questionId, userAnswer = '', note = '') =>
     request(`/wrong-answers/questions/${questionId}`, { method: 'POST', body: JSON.stringify({ user_answer: userAnswer, note }) }),

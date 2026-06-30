@@ -77,6 +77,17 @@ export default function ExamModal({ exam, onClose, onRefresh, showToast }) {
       return userSet.size === correctSet.size && [...userSet].every(v => correctSet.has(v));
     }
     if (qType === 'fill_blank') {
+      // BUG-051: 支持 || 分隔多空位逐空比对
+      const userParts = uaTrimmed.split('||').map(s => s.trim());
+      const correctParts = correct.trim().split('||').map(s => s.trim());
+      if (correctParts.length > 1 || userParts.length > 1) {
+        if (userParts.length !== correctParts.length) return false;
+        return userParts.every((up, i) => {
+          const uc = up.replace(/\s+/g, '');
+          const cc = correctParts[i].replace(/\s+/g, '');
+          return uc === cc || uc.includes(cc);
+        });
+      }
       const uaClean = uaTrimmed.replace(/\s+/g, '');
       const caClean = correct.trim().replace(/\s+/g, '');
       return uaClean === caClean || uaClean.includes(caClean);
@@ -86,11 +97,17 @@ export default function ExamModal({ exam, onClose, onRefresh, showToast }) {
   };
 
   const submitAnswer = async (q, userAnswer) => {
-    setAnswers(prev => ({ ...prev, [q.id]: userAnswer }));
+    const newAnswers = { ...answers, [q.id]: userAnswer };
+    setAnswers(newAnswers);
     const isCorrect = checkAnswer(q, userAnswer);
     setResults(prev => ({ ...prev, [q.id]: isCorrect ? 'correct' : 'wrong' }));
     if (!isCorrect) {
       try { await api.markWrong(q.id, userAnswer); } catch {}
+    }
+    // V1.4: 全部答完后提交到后端持久化
+    const answeredCount = Object.keys(newAnswers).length;
+    if (answeredCount === questions.length) {
+      try { await api.submitExam(exam.id, newAnswers); } catch {}
     }
   };
 

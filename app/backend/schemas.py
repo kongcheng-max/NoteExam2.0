@@ -1,7 +1,7 @@
 """Pydantic 请求/响应模型"""
 from datetime import datetime
 from typing import Optional, Any, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 
 
 # ============ 笔记 ============
@@ -24,6 +24,40 @@ class NoteResponse(BaseModel):
     original_filename: Optional[str] = None
     ocr_status: str = "pending"
     user_id: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+# ============ V1.4: 答题提交 ============
+
+class ExamSubmitRequest(BaseModel):
+    answers: dict[str, str] = Field(..., description="用户答案 {question_id: answer}")
+
+class ExamSubmitResponse(BaseModel):
+    score: int = Field(..., description="总分 0-100")
+    total: int = Field(..., description="总题数")
+    correct: int = Field(..., description="答对数")
+    results: dict[str, str] = Field(..., description="判分结果 {question_id: correct|wrong}")
+    wrong_question_ids: list[str] = Field(default_factory=list, description="错题列表")
+
+class ExamResultResponse(BaseModel):
+    id: str
+    exam_id: str
+    total_questions: int
+    correct_count: int
+    score: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+class ExamResultDetailResponse(BaseModel):
+    id: str
+    exam_id: str
+    answers: dict
+    results: dict
+    total_questions: int
+    correct_count: int
+    score: int
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -174,11 +208,11 @@ class WrongAnswerResponse(BaseModel):
 # ============ V1.2: 用户账号 ============
 
 class UserRegister(BaseModel):
-    email: str = Field(..., min_length=5, max_length=200, description="邮箱")
+    email: EmailStr = Field(..., min_length=5, max_length=200, description="邮箱")
     password: str = Field(..., min_length=6, max_length=100, description="密码")
 
 class UserLogin(BaseModel):
-    email: str = Field(..., min_length=5, max_length=200)
+    email: EmailStr = Field(..., min_length=5, max_length=200)
     password: str = Field(..., min_length=6, max_length=100)
 
 
@@ -192,3 +226,38 @@ class UserResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+# ============ V1.4: 答题提交 ============
+
+class ExamSubmitRequest(BaseModel):
+    answers: dict[str, str] = Field(..., description="用户答案 {question_id: answer}")
+
+class ExamSubmitResponse(BaseModel):
+    score: int = Field(..., description="总分 0-100")
+    total: int = Field(..., description="总题数")
+    correct: int = Field(..., description="答对数")
+    results: dict[str, str] = Field(..., description="判分结果 {question_id: correct|wrong}")
+    wrong_question_ids: list[str] = Field(default_factory=list, description="错题列表")
+
+class ExamResultResponse(BaseModel):
+    id: str
+    exam_id: str
+    total_questions: int
+    correct_count: int
+    score: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+class ExamResultDetailResponse(BaseModel):
+    id: str
+    exam_id: str
+    answers: dict
+    results: dict
+    total_questions: int
+    correct_count: int
+    score: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+

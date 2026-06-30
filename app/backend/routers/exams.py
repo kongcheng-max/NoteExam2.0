@@ -4,10 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from database import get_db
-from models import Note, KnowledgePoint, Exam, Question, User
+from models import Note, KnowledgePoint, Exam, Question, User, WrongAnswer, ExamResult
 from schemas import (
     ExamGenerateRequest, ExamResponse, ExamListItem, QuestionResponse,
     KnowledgePointResponse, APIResponse, QuestionUpdate, QuestionReorder,
+    ExamSubmitRequest, ExamSubmitResponse, ExamResultResponse, ExamResultDetailResponse,
+    WrongAnswerCreate,
 )
 from routers.auth import get_current_user
 from services.deepseek import deepseek_service
@@ -395,18 +397,160 @@ async def export_exam(
 @router.delete("/{exam_id}", response_model=APIResponse)
 async def delete_exam(exam_id: str, db: AsyncSession = Depends(get_db), user: User | None = Depends(get_current_user)):
     """删除试卷"""
-    result = await db.execute(
-        select(Exam).join(Note, Exam.note_id == Note.id).where(Exam.id == exam_id)
-    )
+    result = await db.execute(select(Exam).where(Exam.id == exam_id))
     exam = result.scalar_one_or_none()
     if not exam:
         raise HTTPException(status_code=404, detail="试卷不存在")
-    if exam.note and user and exam.note.user_id != "default" and exam.note.user_id != user.id:
+
+    # BUG-048: 单独查询 Note 获取 user_id，避免 async 懒加载 MissingGreenlet 错误
+    note_result = await db.execute(select(Note).where(Note.id == exam.note_id))
+    note = note_result.scalar_one_or_none()
+    if note and user and note.user_id != "default" and note.user_id != user.id:
         raise HTTPException(status_code=403, detail="无权删除此试卷")
-    if exam.note and exam.note.user_id == "default":
+    if note and note.user_id == "default":
         raise HTTPException(status_code=403, detail="无权删除公共试卷")
 
     await db.delete(exam)
     await db.commit()
 
     return APIResponse(success=True, message="试卷已删除")
+
+# ============ V1.4: 答题提交与历史结果 ============
+
+def _grade_question(q: Question, user_answer: str) -> bool:
+    """V1.4: 后端判分逻辑（与前端 checkAnswer 一致）"""
+    ua = (user_answer or "").strip()
+    if not ua:
+        return False
+    qtype = q.question_type
+    correct = (q.answer or "").strip()
+
+    if qtype in ("single_choice", "true_false"):
+        return ua.upper() == correct.upper()
+    if qtype == "multi_choice":
+        user_set = set(s.strip().upper() for s in ua.split(",") if s.strip())
+        correct_set = set(s.strip().upper() for s in correct.split(",") if s.strip())
+        return user_set == correct_set
+    if qtype == "fill_blank":
+        # BUG-051: 支持 || 分隔多空位逐空比对
+        user_parts = [p.strip() for p in ua.split("||")]
+        correct_parts = [p.strip() for p in correct.split("||")]
+        if len(correct_parts) > 1 or len(user_parts) > 1:
+            if len(user_parts) != len(correct_parts):
+                return False
+            return all(
+                up.replace(" ", "") == cp.replace(" ", "") or up.replace(" ", "") in cp.replace(" ", "")
+                for up, cp in zip(user_parts, correct_parts)
+            )
+        ua_clean = ua.replace(" ", "")
+        ca_clean = correct.replace(" ", "")
+        return ua_clean == ca_clean or ua_clean in ca_clean
+    # short_answer / essay: 有输入即有效
+    return len(ua) > 0
+
+
+@router.post("/{exam_id}/submit", response_model=APIResponse)
+async def submit_exam(
+    exam_id: str,
+    req: ExamSubmitRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User | None = Depends(get_current_user),
+):
+    """V1.4: 提交答题，返回判分结果，错题自动入库"""
+    result = await db.execute(
+        select(Exam).join(Note, Exam.note_id == Note.id).where(
+            Exam.id == exam_id,
+            Note.user_id.in_([user.id, "default"]) if user else Note.user_id == "default"
+        )
+    )
+    exam = result.scalar_one_or_none()
+    if not exam:
+        raise HTTPException(status_code=404, detail="试卷不存在")
+
+    q_result = await db.execute(
+        select(Question).where(Question.exam_id == exam_id).order_by(Question.order_num)
+    )
+    questions = q_result.scalars().all()
+    if not questions:
+        raise HTTPException(status_code=422, detail="试卷无试题")
+
+    results = {}
+    correct_count = 0
+    wrong_ids = []
+
+    for q in questions:
+        user_answer = req.answers.get(q.id, "")
+        is_correct = _grade_question(q, user_answer)
+        results[q.id] = "correct" if is_correct else "wrong"
+        if is_correct:
+            correct_count += 1
+        else:
+            wrong_ids.append(q.id)
+
+    total = len(questions)
+    score = round(correct_count / total * 100) if total > 0 else 0
+
+    # 保存答题记录
+    uid = user.id if user else "default"
+    exam_result = ExamResult(
+        exam_id=exam_id,
+        user_id=uid,
+        answers=req.answers,
+        results=results,
+        total_questions=total,
+        correct_count=correct_count,
+        score=score,
+    )
+    db.add(exam_result)
+
+    # 错题自动入库
+    for qid in wrong_ids:
+        existing = await db.execute(
+            select(WrongAnswer).where(WrongAnswer.question_id == qid)
+        )
+        if not existing.scalar_one_or_none():
+            wa = WrongAnswer(
+                question_id=qid,
+                exam_id=exam_id,
+                user_answer=req.answers.get(qid, ""),
+            )
+            db.add(wa)
+
+    await db.commit()
+
+    return APIResponse(
+        success=True,
+        message=f"得分 {score} 分（{correct_count}/{total}）",
+        data=ExamSubmitResponse(
+            score=score,
+            total=total,
+            correct=correct_count,
+            results=results,
+            wrong_question_ids=wrong_ids,
+        ).model_dump(mode="json"),
+    )
+
+
+@router.get("/{exam_id}/result", response_model=APIResponse)
+async def get_exam_result(
+    exam_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User | None = Depends(get_current_user),
+):
+    """V1.4: 获取历史答题结果"""
+    uid = user.id if user else "default"
+    result = await db.execute(
+        select(ExamResult)
+        .where(ExamResult.exam_id == exam_id, ExamResult.user_id == uid)
+        .order_by(ExamResult.created_at.desc())
+    )
+    items = result.scalars().all()
+
+    return APIResponse(
+        success=True,
+        data=[
+            ExamResultDetailResponse.model_validate(r).model_dump(mode="json")
+            for r in items
+        ],
+    )
+

@@ -2,14 +2,20 @@
 import os
 import uuid
 import asyncio
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from database import get_db
-from models import Note
+from models import Note, User
+from routers.auth import get_current_user
 from schemas import APIResponse
 from config import UPLOAD_DIR
+
+# Debug logging
+logger = logging.getLogger("files_router")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
 
 router = APIRouter(prefix="/api/files", tags=["file-upload"])
 
@@ -17,43 +23,52 @@ ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/jpg"}
 ALLOWED_PDF_TYPE = {"application/pdf"}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
-# BUG-024: 专用线程池，避免 OCR/PDF 解析阻塞事件循环
 _ocr_executor = ThreadPoolExecutor(max_workers=2)
 
 
 async def _process_file_ocr(note_id: str, file_path: str, note_type: str):
     """Background task: OCR / text extraction after upload (non-blocking)"""
+    logger.info(f"OCR task START: note_id={note_id}, type={note_type}, path={file_path}")
     from database import async_session
-    async with async_session() as db:
-        result = await db.execute(select(Note).where(Note.id == note_id))
-        note = result.scalar_one_or_none()
-        if not note:
-            return
+    try:
+        async with async_session() as db:
+            logger.info(f"OCR task: DB session opened for {note_id}")
+            result = await db.execute(select(Note).where(Note.id == note_id))
+            note = result.scalar_one_or_none()
+            if not note:
+                logger.warning(f"OCR task: note {note_id} not found")
+                return
+            logger.info(f"OCR task: setting ocr_status=processing for {note_id}")
+            note.ocr_status = "processing"
+            await db.commit()
+            await db.refresh(note)  # BUG-046: commit 后 refresh 避免对象过期
 
-        # BUG-036: 标记 OCR 开始处理
-        note.ocr_status = "processing"
-        await db.commit()
+            try:
+                loop = asyncio.get_running_loop()
+                if note_type == "image":
+                    from services.ocr import ocr_service
+                    logger.info(f"OCR task: calling Baidu OCR for {file_path}")
+                    text = await loop.run_in_executor(_ocr_executor, ocr_service.recognize_image, file_path)
+                else:
+                    from services.pdf_parser import pdf_parser
+                    logger.info(f"OCR task: extracting PDF text from {file_path}")
+                    text = await loop.run_in_executor(_ocr_executor, pdf_parser.extract_text, file_path)
 
-        try:
-            loop = asyncio.get_running_loop()
-            if note_type == "image":
-                from services.ocr import ocr_service
-                text = await loop.run_in_executor(_ocr_executor, ocr_service.recognize_image, file_path)
-            else:
-                from services.pdf_parser import pdf_parser
-                text = await loop.run_in_executor(_ocr_executor, pdf_parser.extract_text, file_path)
-
-            if text and text.strip():
-                note.content = text.strip()
-                note.ocr_status = "done"
-                await db.commit()
-            else:
+                if text and text.strip():
+                    note.content = text.strip()
+                    note.ocr_status = "done"
+                    await db.commit()
+                    logger.info(f"OCR task DONE: {note_id}, text_len={len(text)}")
+                else:
+                    note.ocr_status = "failed"
+                    await db.commit()
+                    logger.warning(f"OCR task: empty text for {note_id}")
+            except Exception as e:
+                logger.error(f"OCR task FAILED for {note_id}: {e}")
                 note.ocr_status = "failed"
                 await db.commit()
-        except Exception:
-            # BUG-036: OCR 失败时更新状态为 failed，前端据此展示友好提示
-            note.ocr_status = "failed"
-            await db.commit()
+    except Exception as e:
+        logger.error(f"OCR task outer FAILED for {note_id}: {e}")
 
 
 @router.post("/upload", response_model=APIResponse)
@@ -61,6 +76,7 @@ async def upload_note_file(
     file: UploadFile = File(...),
     note_type: str = Form("image"),
     db: AsyncSession = Depends(get_db),
+    user: User | None = Depends(get_current_user),
 ):
     """Upload image or PDF, save locally, create note record"""
     if note_type not in ("image", "pdf"):
@@ -86,11 +102,13 @@ async def upload_note_file(
         note_type=note_type,
         file_path=saved_name,
         original_filename=file.filename,
+        user_id=user.id if user else "default",
     )
     db.add(note)
     await db.commit()
     await db.refresh(note)
 
+    logger.info(f"Upload: creating OCR task for {note.id}")
     asyncio.create_task(_process_file_ocr(note.id, saved_path, note_type))
 
     return APIResponse(

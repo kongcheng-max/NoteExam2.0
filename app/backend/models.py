@@ -1,4 +1,4 @@
-﻿"""数据库模型定义"""
+"""数据库模型定义"""
 import uuid
 from datetime import datetime
 from sqlalchemy import Column, String, Text, Integer, DateTime, ForeignKey, JSON
@@ -18,6 +18,7 @@ class Note(Base):
     note_type = Column(String(10), nullable=False, default="text")  # text / image / pdf
     file_path = Column(String(500), nullable=True)  # V1.1: ????????
     original_filename = Column(String(300), nullable=True)  # V1.1: ?????
+    ocr_status = Column(String(20), default="pending")  # pending / processing / done / failed
     user_id = Column(String(20), default="default")
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -80,6 +81,23 @@ class WrongAnswer(Base):
 
     question = relationship("Question")
     exam = relationship("Exam")
+
+
+class ExamResult(Base):
+    """V1.4: 答题提交记录"""
+    __tablename__ = "exam_results"
+
+    id = Column(String(20), primary_key=True, default=gen_id)
+    exam_id = Column(String(20), ForeignKey("exams.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(20), default="default")
+    answers = Column(JSON, default=dict)  # {question_id: user_answer}
+    results = Column(JSON, default=dict)  # {question_id: "correct"|"wrong"}
+    total_questions = Column(Integer, default=0)
+    correct_count = Column(Integer, default=0)
+    score = Column(Integer, default=0)  # 0-100
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    exam = relationship("Exam")
 class User(Base):
     """V1.2: 用户账号"""
     __tablename__ = "users"
@@ -88,3 +106,4 @@ class User(Base):
     email = Column(String(200), unique=True, nullable=False)
     password_hash = Column(String(200), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
