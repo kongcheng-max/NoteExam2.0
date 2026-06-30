@@ -14,8 +14,10 @@ class Note(Base):
     __tablename__ = "notes"
 
     id = Column(String(20), primary_key=True, default=gen_id)
-    content = Column(Text, nullable=False)
+    content = Column(Text, nullable=False, default="")
     note_type = Column(String(10), nullable=False, default="text")  # text / image / pdf
+    file_path = Column(String(500), nullable=True)  # V1.1: ????????
+    original_filename = Column(String(300), nullable=True)  # V1.1: ?????
     user_id = Column(String(20), default="default")
     created_at = Column(DateTime, default=datetime.utcnow)
 

@@ -1,0 +1,91 @@
+﻿import requests, json
+
+BASE = "http://localhost:8000"
+
+print("=" * 60)
+print("V1.1 功能验证测试")
+print("=" * 60)
+
+# --- Test 1: Knowledge Point CRUD ---
+print("\n--- 知识点 CRUD ---")
+
+# Create note
+r = requests.post(f"{BASE}/api/notes", json={"content": "V1.1测试笔记", "note_type": "text"})
+nid = r.json()["data"]["id"]
+print(f"Create note: {r.status_code}, id={nid}")
+
+# Add knowledge point
+r = requests.post(f"{BASE}/api/notes/{nid}/knowledge-points", json={
+    "name": "手动添加知识点", "category": "测试", "importance": "high"
+})
+print(f"Add KP: {r.status_code}, {r.json().get('message')}")
+
+# List KPs
+r = requests.get(f"{BASE}/api/notes/{nid}/knowledge-points")
+kps = r.json()["data"]
+print(f"List KPs: {len(kps)} items")
+if kps:
+    kpid = kps[0]["id"]
+    
+    # Update KP
+    r = requests.put(f"{BASE}/api/notes/{nid}/knowledge-points/{kpid}", json={"name": "修改后的知识点"})
+    print(f"Update KP: {r.status_code}, {r.json().get('message')}")
+    
+    # Delete KP
+    r = requests.delete(f"{BASE}/api/notes/{nid}/knowledge-points/{kpid}")
+    print(f"Delete KP: {r.status_code}, {r.json().get('message')}")
+
+# --- Test 2: File Upload (without OCR keys) ---
+print("\n--- 文件上传 ---")
+# Upload image
+with open(__file__, "rb") as f:
+    r = requests.post(f"{BASE}/api/notes/upload",
+        files={"file": ("test.png", f, "image/png")},
+        data={"note_type": "image"}
+    )
+print(f"Upload image: {r.status_code}")
+data = r.json()
+print(f"  Message: {data.get('message')}")
+print(f"  Note ID: {data.get('data',{}).get('id')}")
+
+# Upload PDF
+with open(__file__, "rb") as f:
+    r = requests.post(f"{BASE}/api/notes/upload",
+        files={"file": ("test.pdf", f, "application/pdf")},
+        data={"note_type": "pdf"}
+    )
+print(f"Upload PDF: {r.status_code}, {r.json().get('message')}")
+
+# Invalid type
+with open(__file__, "rb") as f:
+    r = requests.post(f"{BASE}/api/notes/upload",
+        files={"file": ("test.txt", f, "text/plain")},
+        data={"note_type": "image"}
+    )
+print(f"Upload invalid type: {r.status_code} (expect 422)")
+
+# --- Test 3: File size limit ---
+print("\n--- 文件大小限制 ---")
+big_data = b"x" * (11 * 1024 * 1024)  # 11MB > 10MB limit
+r = requests.post(f"{BASE}/api/notes/upload",
+    files={"file": ("big.png", big_data, "image/png")},
+    data={"note_type": "image"}
+)
+print(f"Upload 11MB: {r.status_code} (expect 413)")
+
+# --- Test 4: Question Edit (needs exam, but API key is fake) ---
+print("\n--- 试题编辑 API 存在性检查 ---")
+r = requests.put(f"{BASE}/api/exams/fake-id/questions/fake-qid", json={"answer": "test"})
+print(f"Edit question (404): {r.status_code} (expect 404)")
+
+r = requests.put(f"{BASE}/api/exams/fake-id/questions/reorder", json={"question_ids": ["a","b"]})
+print(f"Reorder (404): {r.status_code} (expect 404 - note: returns 200 even if questions missing)")
+
+# --- Test 5: Export ---
+print("\n--- 导出端点 ---")
+r = requests.get(f"{BASE}/api/exams/fake-id/export")
+print(f"Export HTML: {r.status_code} (expect 404)")
+
+print("\n" + "=" * 60)
+print("V1.1 功能验证完成")
+print("=" * 60)

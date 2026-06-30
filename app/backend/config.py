@@ -19,3 +19,13 @@ API_TIMEOUT = int(os.getenv("API_TIMEOUT", "120"))
 # 服务器配置
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8000"))
+
+
+# V1.1: ?? OCR ????????????
+BAIDU_OCR_APP_ID = os.getenv("BAIDU_OCR_APP_ID", "")
+BAIDU_OCR_API_KEY = os.getenv("BAIDU_OCR_API_KEY", "")
+BAIDU_OCR_SECRET_KEY = os.getenv("BAIDU_OCR_SECRET_KEY", "")
+
+# V1.1: ??????
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)

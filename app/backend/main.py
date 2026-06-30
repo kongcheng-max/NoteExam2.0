@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from database import init_db
 from routers.notes import router as notes_router
 from routers.exams import router as exams_router
+from routers.files import router as files_router
 
 
 @asynccontextmanager
@@ -32,6 +33,7 @@ app.add_middleware(
 
 # 注册路由
 app.include_router(notes_router)
+app.include_router(files_router)
 app.include_router(exams_router)
 
 

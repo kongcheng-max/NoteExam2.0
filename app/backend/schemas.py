@@ -11,10 +11,17 @@ class NoteCreate(BaseModel):
     note_type: Literal["text", "image", "pdf"] = "text"
 
 
+
+
+class NoteUpdate(BaseModel):
+    content: Optional[str] = Field(None, min_length=1, max_length=50000, description="更新后的笔记内容")
+
 class NoteResponse(BaseModel):
     id: str
     content: str
     note_type: str
+    file_path: Optional[str] = None
+    original_filename: Optional[str] = None
     user_id: str
     created_at: datetime
 
@@ -50,7 +57,7 @@ class ExamGenerateRequest(BaseModel):
     note_id: str = Field(..., description="笔记ID")
     title: str = Field(default="", description="试卷标题")
     question_types: list[str] = Field(
-        default=["single_choice", "multi_choice", "true_false", "fill_blank", "short_answer"],
+        default=["single_choice", "multi_choice", "true_false", "fill_blank"],
         description="题型列表"
     )
     difficulties: list[str] = Field(
@@ -105,3 +112,40 @@ class APIResponse(BaseModel):
     success: bool
     message: str = ""
     data: Any = None
+
+
+# ============ V1.1: ???? ============
+
+class NoteUploadResponse(BaseModel):
+    id: str
+    note_type: str
+    original_filename: Optional[str] = None
+
+
+# ============ V1.1: ??????? ============
+
+class KnowledgePointCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200, description="?????")
+    category: str = Field(default="", max_length=100)
+    importance: str = Field(default="normal", pattern="^(high|normal|low)$")
+
+
+class KnowledgePointUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=200)
+    category: Optional[str] = Field(None, max_length=100)
+    importance: Optional[str] = Field(None, pattern="^(high|normal|low)$")
+
+
+# ============ V1.1: ???? ============
+
+class QuestionUpdate(BaseModel):
+    question_type: Optional[str] = None
+    difficulty: Optional[str] = None
+    content: Optional[dict] = None
+    answer: Optional[str] = None
+    explanation: Optional[str] = None
+    order_num: Optional[int] = None
+
+
+class QuestionReorder(BaseModel):
+    question_ids: list[str] = Field(..., description="?????????ID??")
