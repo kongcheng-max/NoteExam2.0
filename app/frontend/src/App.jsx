@@ -1,9 +1,10 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+﻿import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { ToastContext, AuthContext, useToast, useAuth } from './context';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Nav from './components/Nav';
 import Home from './pages/Home';
 import WrongAnswers from './pages/WrongAnswers';
+import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import OfflineBanner from './components/OfflineBanner';
 import Toast from './components/Toast';
@@ -121,6 +122,7 @@ export default function App() {
           <Nav />
           <Routes>
             <Route path="/" element={<Home />} />
+            <Route path="/reports" element={<Reports />} />
             <Route path="/wrong-answers" element={<WrongAnswers />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>

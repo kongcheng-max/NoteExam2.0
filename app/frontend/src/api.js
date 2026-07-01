@@ -1,4 +1,4 @@
-const BASE = '/api';
+﻿const BASE = '/api';
 
 let authToken = localStorage.getItem('noteexam_token') || '';
 
@@ -33,10 +33,10 @@ export const api = {
   createNote: (content, noteType = 'text') =>
     request('/notes', { method: 'POST', body: JSON.stringify({ content, note_type: noteType }) }),
   getNotes: () => request('/notes'),
-  getNote: (id) => request(`/notes/${id}`),
-  deleteNote: (id) => request(`/notes/${id}`, { method: 'DELETE' }),
-  updateNote: (id, content) => request(`/notes/${id}`, { method: 'PUT', body: JSON.stringify({ content }) }),
-  getKnowledgePoints: (noteId) => request(`/notes/${noteId}/knowledge-points`),
+  getNote: (id) => request('/notes/' + id),
+  deleteNote: (id) => request('/notes/' + id, { method: 'DELETE' }),
+  updateNote: (id, content) => request('/notes/' + id, { method: 'PUT', body: JSON.stringify({ content }) }),
+  getKnowledgePoints: (noteId) => request('/notes/' + noteId + '/knowledge-points'),
 
   // V1.1: 文件上传
   uploadFile: (file, noteType = 'image') => {
@@ -58,11 +58,11 @@ export const api = {
 
   // V1.1: 知识点 CRUD
   addKnowledgePoint: (noteId, kp) =>
-    request(`/notes/${noteId}/knowledge-points`, { method: 'POST', body: JSON.stringify(kp) }),
+    request('/notes/' + noteId + '/knowledge-points', { method: 'POST', body: JSON.stringify(kp) }),
   updateKnowledgePoint: (noteId, kpId, kp) =>
-    request(`/notes/${noteId}/knowledge-points/${kpId}`, { method: 'PUT', body: JSON.stringify(kp) }),
+    request('/notes/' + noteId + '/knowledge-points/' + kpId, { method: 'PUT', body: JSON.stringify(kp) }),
   deleteKnowledgePoint: (noteId, kpId) =>
-    request(`/notes/${noteId}/knowledge-points/${kpId}`, { method: 'DELETE' }),
+    request('/notes/' + noteId + '/knowledge-points/' + kpId, { method: 'DELETE' }),
 
   // 试卷
   generateExam: (noteId, opts = {}) =>
@@ -77,20 +77,20 @@ export const api = {
       }),
     }),
   getExams: () => request('/exams'),
-  getExam: (id) => request(`/exams/${id}`),
-  deleteExam: (id) => request(`/exams/${id}`, { method: 'DELETE' }),
+  getExam: (id) => request('/exams/' + id),
+  deleteExam: (id) => request('/exams/' + id, { method: 'DELETE' }),
 
   // V1.1: 试题编辑
   updateQuestion: (examId, questionId, updates) =>
-    request(`/exams/${examId}/questions/${questionId}`, { method: 'PUT', body: JSON.stringify(updates) }),
+    request('/exams/' + examId + '/questions/' + questionId, { method: 'PUT', body: JSON.stringify(updates) }),
   deleteQuestion: (examId, questionId) =>
-    request(`/exams/${examId}/questions/${questionId}`, { method: 'DELETE' }),
+    request('/exams/' + examId + '/questions/' + questionId, { method: 'DELETE' }),
   reorderQuestions: (examId, questionIds) =>
-    request(`/exams/${examId}/questions/reorder`, { method: 'PUT', body: JSON.stringify({ question_ids: questionIds }) }),
+    request('/exams/' + examId + '/questions/reorder', { method: 'PUT', body: JSON.stringify({ question_ids: questionIds }) }),
 
   // V1.1: 试卷导出
   getExportUrl: (examId, format = 'html', withAnswers = true) =>
-    `${BASE}/exams/${examId}/export?format=${format}&with_answers=${withAnswers}`,
+    BASE + '/exams/' + examId + '/export?format=' + format + '&with_answers=' + withAnswers,
 
   // V1.4: 答题提交
   submitExam: (examId, answers) =>
@@ -100,14 +100,29 @@ export const api = {
 
   // V1.2: 错题回顾
   markWrong: (questionId, userAnswer = '', note = '') =>
-    request(`/wrong-answers/questions/${questionId}`, { method: 'POST', body: JSON.stringify({ user_answer: userAnswer, note }) }),
+    request('/wrong-answers/questions/' + questionId, { method: 'POST', body: JSON.stringify({ user_answer: userAnswer, note }) }),
   unmarkWrong: (questionId) =>
-    request(`/wrong-answers/questions/${questionId}`, { method: 'DELETE' }),
+    request('/wrong-answers/questions/' + questionId, { method: 'DELETE' }),
   getWrongAnswers: () => request('/wrong-answers'),
   reviewWrong: (wrongId) =>
-    request(`/wrong-answers/${wrongId}/review`, { method: 'POST' }),
+    request('/wrong-answers/' + wrongId + '/review', { method: 'POST' }),
   deleteWrong: (wrongId) =>
-    request(`/wrong-answers/${wrongId}`, { method: 'DELETE' }),
+    request('/wrong-answers/' + wrongId, { method: 'DELETE' }),
+
+  // V2.0: 错题分析
+  analyzeWrongAnswers: (wrongIds = []) =>
+    request('/wrong-answers/analyze', { method: 'POST', body: JSON.stringify({ wrong_ids: wrongIds }) }),
+  getWrongAnswerAnalyses: () => request('/wrong-answers/analyses'),
+  getWrongAnswerAnalysis: (analysisId) => request('/wrong-answers/analyses/' + analysisId),
+  deleteWrongAnswerAnalysis: (analysisId) => request('/wrong-answers/analyses/' + analysisId, { method: 'DELETE' }),
+  getWrongAnswerStats: () => request('/wrong-answers/stats'),
+
+  // V2.0: 学习报告
+  generateReport: (examIds = [], title = '') =>
+    request('/reports/generate', { method: 'POST', body: JSON.stringify({ exam_ids: examIds, title }) }),
+  getReports: () => request('/reports'),
+  getReport: (reportId) => request('/reports/' + reportId),
+  deleteReport: (reportId) => request('/reports/' + reportId, { method: 'DELETE' }),
 
   // V1.2: 用户认证
   register: (email, password, confirmPassword) =>

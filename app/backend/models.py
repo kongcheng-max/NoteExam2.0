@@ -1,4 +1,4 @@
-"""数据库模型定义"""
+﻿"""数据库模型定义"""
 import uuid
 from datetime import datetime
 from sqlalchemy import Column, String, Text, Integer, DateTime, ForeignKey, JSON
@@ -16,8 +16,8 @@ class Note(Base):
     id = Column(String(20), primary_key=True, default=gen_id)
     content = Column(Text, nullable=False, default="")
     note_type = Column(String(10), nullable=False, default="text")  # text / image / pdf
-    file_path = Column(String(500), nullable=True)  # V1.1: ????????
-    original_filename = Column(String(300), nullable=True)  # V1.1: ?????
+    file_path = Column(String(500), nullable=True)  # V1.1: 文件路径
+    original_filename = Column(String(300), nullable=True)  # V1.1: 原始文件名
     ocr_status = Column(String(20), default="pending")  # pending / processing / done / failed
     user_id = Column(String(20), default="default")
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -107,3 +107,31 @@ class User(Base):
     password_hash = Column(String(200), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class StudyReport(Base):
+    """V2.0: 学习报告"""
+    __tablename__ = "study_reports"
+
+    id = Column(String(20), primary_key=True, default=gen_id)
+    user_id = Column(String(20), default="default")
+    title = Column(String(200), nullable=False)
+    content = Column(JSON, nullable=False, default=dict)  # AI 生成的报告内容
+    exam_ids = Column(JSON, default=list)  # 关联的试卷ID列表
+    wrong_answer_ids = Column(JSON, default=list)  # 关联的错题ID列表
+    total_exams = Column(Integer, default=0)
+    total_questions = Column(Integer, default=0)
+    avg_score = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class WrongAnswerAnalysis(Base):
+    """V2.0: 错题智能分析结果"""
+    __tablename__ = "wrong_answer_analyses"
+
+    id = Column(String(20), primary_key=True, default=gen_id)
+    user_id = Column(String(20), default="default")
+    analysis_data = Column(JSON, nullable=False, default=dict)  # AI 分析结果
+    total_wrong = Column(Integer, default=0)
+    weak_kps = Column(JSON, default=list)  # 薄弱知识点列表
+    created_at = Column(DateTime, default=datetime.utcnow)

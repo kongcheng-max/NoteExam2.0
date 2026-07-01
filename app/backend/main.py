@@ -8,6 +8,7 @@ from routers.exams import router as exams_router
 from routers.files import router as files_router
 from routers.wrong_answers import router as wrong_answers_router
 from routers.auth import router as auth_router
+from routers.reports import router as reports_router
 
 
 @asynccontextmanager
@@ -39,6 +40,7 @@ app.include_router(files_router)
 app.include_router(exams_router)
 app.include_router(wrong_answers_router)
 app.include_router(auth_router)
+app.include_router(reports_router)
 
 
 @app.get("/api/health")

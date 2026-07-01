@@ -1,4 +1,4 @@
-"""Pydantic 请求/响应模型"""
+﻿"""Pydantic 请求/响应模型"""
 from datetime import datetime
 from typing import Optional, Any, Literal
 from pydantic import BaseModel, Field, EmailStr, model_validator
@@ -24,40 +24,6 @@ class NoteResponse(BaseModel):
     original_filename: Optional[str] = None
     ocr_status: str = "pending"
     user_id: str
-    created_at: datetime
-
-    model_config = {"from_attributes": True}
-
-# ============ V1.4: 答题提交 ============
-
-class ExamSubmitRequest(BaseModel):
-    answers: dict[str, str] = Field(..., description="用户答案 {question_id: answer}")
-
-class ExamSubmitResponse(BaseModel):
-    score: int = Field(..., description="总分 0-100")
-    total: int = Field(..., description="总题数")
-    correct: int = Field(..., description="答对数")
-    results: dict[str, str] = Field(..., description="判分结果 {question_id: correct|wrong}")
-    wrong_question_ids: list[str] = Field(default_factory=list, description="错题列表")
-
-class ExamResultResponse(BaseModel):
-    id: str
-    exam_id: str
-    total_questions: int
-    correct_count: int
-    score: int
-    created_at: datetime
-
-    model_config = {"from_attributes": True}
-
-class ExamResultDetailResponse(BaseModel):
-    id: str
-    exam_id: str
-    answers: dict
-    results: dict
-    total_questions: int
-    correct_count: int
-    score: int
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -100,7 +66,7 @@ class ExamGenerateRequest(BaseModel):
         description="难度列表"
     )
     total_questions: int = Field(default=20, ge=5, le=50, description="题目总数")
-    difficulty_ratios: Optional[dict] = Field(default=None, description="难度占比，如 {'basic': 0.3, 'advanced': 0.4, 'challenge': 0.3}")
+    difficulty_ratios: Optional[dict] = Field(default=None, description="难度占比，如 {''''basic'''': 0.3, ''''advanced'''': 0.4, ''''challenge'''': 0.3}")
 
 
 class QuestionContent(BaseModel):
@@ -150,7 +116,7 @@ class APIResponse(BaseModel):
     data: Any = None
 
 
-# ============ V1.1: ???? ============
+# ============ V1.1: 文件上传 ============
 
 class NoteUploadResponse(BaseModel):
     id: str
@@ -158,10 +124,10 @@ class NoteUploadResponse(BaseModel):
     original_filename: Optional[str] = None
 
 
-# ============ V1.1: ??????? ============
+# ============ V1.1: 知识点管理 ============
 
 class KnowledgePointCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=200, description="?????")
+    name: str = Field(..., min_length=1, max_length=200, description="知识点名称")
     category: str = Field(default="", max_length=100)
     importance: str = Field(default="normal", pattern="^(high|normal|low)$")
 
@@ -172,7 +138,7 @@ class KnowledgePointUpdate(BaseModel):
     importance: Optional[str] = Field(None, pattern="^(high|normal|low)$")
 
 
-# ============ V1.1: ???? ============
+# ============ V1.1: 试题管理 ============
 
 class QuestionUpdate(BaseModel):
     question_type: Optional[str] = None
@@ -184,7 +150,7 @@ class QuestionUpdate(BaseModel):
 
 
 class QuestionReorder(BaseModel):
-    question_ids: list[str] = Field(..., description="?????????ID??")
+    question_ids: list[str] = Field(..., description="按新顺序排列的试题ID列表")
 
 # ============ V1.2: 错题回顾 ============
 
@@ -268,3 +234,41 @@ class ExamResultDetailResponse(BaseModel):
 
     model_config = {"from_attributes": True}
 
+
+# ============ V2.0: 学习报告 ============
+
+class ReportGenerateRequest(BaseModel):
+    title: str = Field(default="", description="报告标题")
+    exam_ids: list[str] = Field(default_factory=list, description="要分析的试卷ID列表，为空则分析全部历史")
+
+
+class StudyReportResponse(BaseModel):
+    id: str
+    user_id: str
+    title: str
+    content: dict
+    exam_ids: list = []
+    wrong_answer_ids: list = []
+    total_exams: int
+    total_questions: int
+    avg_score: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ============ V2.0: 错题智能分析 ============
+
+class WrongAnswerAnalysisRequest(BaseModel):
+    wrong_ids: list[str] = Field(default_factory=list, description="要分析的错题ID列表，为空则分析全部错题")
+
+
+class WrongAnswerAnalysisResponse(BaseModel):
+    id: str
+    user_id: str
+    analysis_data: dict
+    total_wrong: int
+    weak_kps: list = []
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

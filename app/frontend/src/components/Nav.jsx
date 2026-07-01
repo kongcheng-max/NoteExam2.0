@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { useAuth } from '../App';
 
 const style = {
@@ -28,6 +28,7 @@ export default function Nav() {
         <a href="/" style={style.logo}>NoteExam</a>
         <span style={style.tagline}>笔记即试卷</span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+          <a href="/reports" style={style.link}>学习报告</a>
           <a href="/wrong-answers" style={style.link}>错题本</a>
           {user ? (
             <>

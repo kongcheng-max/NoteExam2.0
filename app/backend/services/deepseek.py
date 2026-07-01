@@ -3,7 +3,7 @@ import json
 import asyncio
 import httpx
 from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL, MAX_RETRIES, API_TIMEOUT
-from services.prompts import KNOWLEDGE_EXTRACT_PROMPT, QUESTION_GENERATE_PROMPT
+from services.prompts import KNOWLEDGE_EXTRACT_PROMPT, QUESTION_GENERATE_PROMPT, STUDY_REPORT_PROMPT, WRONG_ANSWER_ANALYSIS_PROMPT
 
 
 class DeepSeekService:
@@ -130,6 +130,31 @@ class DeepSeekService:
         if not isinstance(qs, list):
             raise ValueError("AI 返回的试题格式错误，预期为数组")
         return qs
+
+    async def generate_study_report(self, exam_history: str, wrong_answers: str) -> dict:
+        """V2.0: 生成学习报告"""
+        prompt = STUDY_REPORT_PROMPT.format(
+            exam_history=exam_history,
+            wrong_answers=wrong_answers,
+        )
+        messages = [
+            {"role": "system", "content": "你是一位资深的学习分析专家和教育顾问。请始终以 JSON 格式输出结果。"},
+            {"role": "user", "content": prompt},
+        ]
+        resp_text = await self._call_api(messages, max_tokens=4096)
+        return self._extract_json(resp_text)
+
+    async def analyze_wrong_answers(self, wrong_answers_data: str) -> dict:
+        """V2.0: 错题智能分析"""
+        prompt = WRONG_ANSWER_ANALYSIS_PROMPT.format(
+            wrong_answers_data=wrong_answers_data,
+        )
+        messages = [
+            {"role": "system", "content": "你是一位教育数据分析和学习诊断专家。请始终以 JSON 格式输出结果。"},
+            {"role": "user", "content": prompt},
+        ]
+        resp_text = await self._call_api(messages, max_tokens=4096)
+        return self._extract_json(resp_text)
 
 
 # 单例
