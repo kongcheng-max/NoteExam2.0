@@ -17,16 +17,18 @@ function LoginModal({ onClose, onSuccess }) {
   const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!email || !password) return showToast('请填写邮箱和密码', 'error');
     if (password.length < 6) return showToast('密码至少6位', 'error');
+    if (isRegister && password !== confirmPassword) return showToast('两次密码不一致', 'error');
     setLoading(true);
     try {
       const res = isRegister
-        ? await api.register(email, password)
+        ? await api.register(email, password, confirmPassword)
         : await api.login(email, password);
       setToken(res.data.token);
       showToast(isRegister ? '注册成功' : '登录成功');
@@ -57,7 +59,13 @@ function LoginModal({ onClose, onSuccess }) {
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
             placeholder="密码（至少6位）"
             style={{ width: '100%', padding: '10px 14px', borderRadius: 6, border: '1px solid var(--border)',
-              fontSize: '.9rem', marginBottom: 16, boxSizing: 'border-box' }} />
+              fontSize: '.9rem', marginBottom: 12, boxSizing: 'border-box' }} />
+          {isRegister && (
+            <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="确认密码"
+              style={{ width: '100%', padding: '10px 14px', borderRadius: 6, border: '1px solid var(--border)',
+                fontSize: '.9rem', marginBottom: 16, boxSizing: 'border-box' }} />
+          )}
           <button type="submit" className="btn btn-primary" disabled={loading}
             style={{ width: '100%', padding: '10px 0', fontSize: '.9rem' }}>
             {loading ? '请稍候……' : (isRegister ? '注册' : '登录')}

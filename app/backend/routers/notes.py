@@ -23,11 +23,13 @@ async def _check_note_access(note_id: str, user: User | None, db: AsyncSession, 
     note = result.scalar_one_or_none()
     if not note:
         raise HTTPException(status_code=404, detail="笔记不存在")
+    if require_owner and not user:
+        raise HTTPException(status_code=401, detail="请先登录")
     if user and note.user_id != "default" and note.user_id != user.id:
         raise HTTPException(status_code=403, detail="无权访问此笔记")
-    if require_owner and note.user_id == "default":
+    if require_owner and note.user_id == "default" and not user:
         raise HTTPException(status_code=403, detail="无权修改公共笔记")
-    if require_owner and user and note.user_id != user.id:
+    if require_owner and user and note.user_id != "default" and note.user_id != user.id:
         raise HTTPException(status_code=403, detail="无权修改此笔记")
     return note
 

@@ -397,6 +397,8 @@ async def export_exam(
 @router.delete("/{exam_id}", response_model=APIResponse)
 async def delete_exam(exam_id: str, db: AsyncSession = Depends(get_db), user: User | None = Depends(get_current_user)):
     """删除试卷"""
+    if not user:
+        raise HTTPException(status_code=401, detail="请先登录")
     result = await db.execute(select(Exam).where(Exam.id == exam_id))
     exam = result.scalar_one_or_none()
     if not exam:
@@ -407,7 +409,7 @@ async def delete_exam(exam_id: str, db: AsyncSession = Depends(get_db), user: Us
     note = note_result.scalar_one_or_none()
     if note and user and note.user_id != "default" and note.user_id != user.id:
         raise HTTPException(status_code=403, detail="无权删除此试卷")
-    if note and note.user_id == "default":
+    if note and note.user_id == "default" and not user:
         raise HTTPException(status_code=403, detail="无权删除公共试卷")
 
     await db.delete(exam)

@@ -110,8 +110,8 @@ export const api = {
     request(`/wrong-answers/${wrongId}`, { method: 'DELETE' }),
 
   // V1.2: 用户认证
-  register: (email, password) =>
-    request('/auth/register', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  register: (email, password, confirmPassword) =>
+    request('/auth/register', { method: 'POST', body: JSON.stringify({ email, password, confirm_password: confirmPassword }) }),
   login: (email, password) =>
     request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
   getMe: () => request('/auth/me'),

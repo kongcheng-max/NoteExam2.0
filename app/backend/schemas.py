@@ -1,7 +1,7 @@
 """Pydantic 请求/响应模型"""
 from datetime import datetime
 from typing import Optional, Any, Literal
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, model_validator
 
 
 # ============ 笔记 ============
@@ -210,6 +210,13 @@ class WrongAnswerResponse(BaseModel):
 class UserRegister(BaseModel):
     email: EmailStr = Field(..., min_length=5, max_length=200, description="邮箱")
     password: str = Field(..., min_length=6, max_length=100, description="密码")
+    confirm_password: str = Field(..., min_length=6, max_length=100, description="确认密码")
+
+    @model_validator(mode="after")
+    def check_passwords_match(self):
+        if self.password != self.confirm_password:
+            raise ValueError("两次输入的密码不一致")
+        return self
 
 class UserLogin(BaseModel):
     email: EmailStr = Field(..., min_length=5, max_length=200)
